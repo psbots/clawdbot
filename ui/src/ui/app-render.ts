@@ -183,22 +183,14 @@ export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const hasConnectedMobileNode = state.nodes.some((n) => {
-    if (!Boolean(n.connected)) return false;
-    const p = typeof n.platform === "string" ? n.platform.trim().toLowerCase() : "";
-    return p.startsWith("ios") || p.startsWith("ipados") || p.startsWith("android");
-  });
-  const chatDisabledReason = !state.connected
-    ? "Disconnected from gateway."
-    : hasConnectedMobileNode
-      ? null
-      : "No connected iOS/Android node — Web Chat + Talk are disabled.";
+  const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
+  const isChat = state.tab === "chat";
 
   return html`
-    <div class="shell">
+    <div class="shell ${isChat ? "shell--chat" : ""}">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-title">Clawdis Control</div>
+          <div class="brand-title">Clawdbot Control</div>
           <div class="brand-sub">Gateway dashboard</div>
         </div>
         <div class="topbar-status">
@@ -220,7 +212,7 @@ export function renderApp(state: AppViewState) {
           `,
         )}
       </aside>
-      <main class="content">
+      <main class="content ${isChat ? "content--chat" : ""}">
         <section class="content-header">
           <div>
             <div class="page-title">${titleForTab(state.tab)}</div>
@@ -398,8 +390,9 @@ export function renderApp(state: AppViewState) {
               stream: state.chatStream,
               draft: state.chatMessage,
               connected: state.connected,
-              canSend: state.connected && hasConnectedMobileNode,
+              canSend: state.connected,
               disabledReason: chatDisabledReason,
+              error: state.lastError,
               sessions: state.sessionsResult,
               onRefresh: () => {
                 state.resetToolStream();

@@ -182,6 +182,110 @@ describe("subscribeEmbeddedPiSession", () => {
     expect(subscription.assistantTexts).toEqual(["Hello block"]);
   });
 
+  it("does not duplicate when message_end flushes and a late text_end arrives", () => {
+    let handler: ((evt: unknown) => void) | undefined;
+    const session: StubSession = {
+      subscribe: (fn) => {
+        handler = fn;
+        return () => {};
+      },
+    };
+
+    const onBlockReply = vi.fn();
+
+    const subscription = subscribeEmbeddedPiSession({
+      session: session as unknown as Parameters<
+        typeof subscribeEmbeddedPiSession
+      >[0]["session"],
+      runId: "run",
+      onBlockReply,
+      blockReplyBreak: "text_end",
+    });
+
+    handler?.({ type: "message_start", message: { role: "assistant" } });
+
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: {
+        type: "text_delta",
+        delta: "Hello block",
+      },
+    });
+
+    const assistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Hello block" }],
+    } as AssistantMessage;
+
+    // Simulate a provider that ends the message without emitting text_end.
+    handler?.({ type: "message_end", message: assistantMessage });
+
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
+    expect(subscription.assistantTexts).toEqual(["Hello block"]);
+
+    // Some providers can still emit a late text_end; this must not re-emit.
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: {
+        type: "text_end",
+        content: "Hello block",
+      },
+    });
+
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
+    expect(subscription.assistantTexts).toEqual(["Hello block"]);
+  });
+
+  it("clears block reply state on message_start", () => {
+    let handler: ((evt: unknown) => void) | undefined;
+    const session: StubSession = {
+      subscribe: (fn) => {
+        handler = fn;
+        return () => {};
+      },
+    };
+
+    const onBlockReply = vi.fn();
+
+    subscribeEmbeddedPiSession({
+      session: session as unknown as Parameters<
+        typeof subscribeEmbeddedPiSession
+      >[0]["session"],
+      runId: "run",
+      onBlockReply,
+      blockReplyBreak: "text_end",
+    });
+
+    handler?.({ type: "message_start", message: { role: "assistant" } });
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: { type: "text_delta", delta: "OK" },
+    });
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: { type: "text_end" },
+    });
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
+
+    // New assistant message with identical output should still emit.
+    handler?.({ type: "message_start", message: { role: "assistant" } });
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: { type: "text_delta", delta: "OK" },
+    });
+    handler?.({
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: { type: "text_end" },
+    });
+    expect(onBlockReply).toHaveBeenCalledTimes(2);
+  });
+
   it("does not emit duplicate block replies when text_end repeats", () => {
     let handler: ((evt: unknown) => void) | undefined;
     const session: StubSession = {
@@ -229,6 +333,33 @@ describe("subscribeEmbeddedPiSession", () => {
 
     expect(onBlockReply).toHaveBeenCalledTimes(1);
     expect(subscription.assistantTexts).toEqual(["Hello block"]);
+  });
+
+  it("does not duplicate assistantTexts when message_end repeats", () => {
+    let handler: SessionEventHandler | undefined;
+    const session: StubSession = {
+      subscribe: (fn) => {
+        handler = fn;
+        return () => {};
+      },
+    };
+
+    const subscription = subscribeEmbeddedPiSession({
+      session: session as unknown as Parameters<
+        typeof subscribeEmbeddedPiSession
+      >[0]["session"],
+      runId: "run",
+    });
+
+    const assistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Hello world" }],
+    } as AssistantMessage;
+
+    handler?.({ type: "message_end", message: assistantMessage });
+    handler?.({ type: "message_end", message: assistantMessage });
+
+    expect(subscription.assistantTexts).toEqual(["Hello world"]);
   });
 
   it("does not append when text_end content is a prefix of deltas", () => {

@@ -142,7 +142,7 @@ function formatToolOutput(value: unknown): string | null {
 
 declare global {
   interface Window {
-    __CLAWDIS_CONTROL_UI_BASE_PATH__?: string;
+    __CLAWDBOT_CONTROL_UI_BASE_PATH__?: string;
   }
 }
 
@@ -167,8 +167,8 @@ const DEFAULT_CRON_FORM: CronFormState = {
   postToMainPrefix: "",
 };
 
-@customElement("clawdis-app")
-export class ClawdisApp extends LitElement {
+@customElement("clawdbot-app")
+export class ClawdbotApp extends LitElement {
   @state() settings: UiSettings = loadSettings();
   @state() password = "";
   @state() tab: Tab = "chat";
@@ -348,6 +348,7 @@ export class ClawdisApp extends LitElement {
   private popStateHandler = () => this.onPopState();
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
+  private topbarObserver: ResizeObserver | null = null;
 
   createRenderRoot() {
     return this;
@@ -365,10 +366,16 @@ export class ClawdisApp extends LitElement {
     this.startNodesPolling();
   }
 
+  protected firstUpdated() {
+    this.observeTopbar();
+  }
+
   disconnectedCallback() {
     window.removeEventListener("popstate", this.popStateHandler);
     this.stopNodesPolling();
     this.detachThemeListener();
+    this.topbarObserver?.disconnect();
+    this.topbarObserver = null;
     super.disconnectedCallback();
   }
 
@@ -396,7 +403,7 @@ export class ClawdisApp extends LitElement {
       url: this.settings.gatewayUrl,
       token: this.settings.token.trim() ? this.settings.token : undefined,
       password: this.password.trim() ? this.password : undefined,
-      clientName: "clawdis-control-ui",
+      clientName: "clawdbot-control-ui",
       mode: "webchat",
       onHello: (hello) => {
         this.connected = true;
@@ -437,6 +444,19 @@ export class ClawdisApp extends LitElement {
     });
   }
 
+  private observeTopbar() {
+    if (typeof ResizeObserver === "undefined") return;
+    const topbar = this.querySelector(".topbar");
+    if (!topbar) return;
+    const update = () => {
+      const { height } = topbar.getBoundingClientRect();
+      this.style.setProperty("--topbar-height", `${height}px`);
+    };
+    update();
+    this.topbarObserver = new ResizeObserver(() => update());
+    this.topbarObserver.observe(topbar);
+  }
+
   private startNodesPolling() {
     if (this.nodesPollInterval != null) return;
     this.nodesPollInterval = window.setInterval(
@@ -449,17 +469,6 @@ export class ClawdisApp extends LitElement {
     if (this.nodesPollInterval == null) return;
     clearInterval(this.nodesPollInterval);
     this.nodesPollInterval = null;
-  }
-
-  private hasConnectedMobileNode() {
-    return this.nodes.some((n) => {
-      if (!Boolean(n.connected)) return false;
-      const p =
-        typeof n.platform === "string" ? n.platform.trim().toLowerCase() : "";
-      return (
-        p.startsWith("ios") || p.startsWith("ipados") || p.startsWith("android")
-      );
-    });
   }
 
   resetToolStream() {
@@ -663,7 +672,7 @@ export class ClawdisApp extends LitElement {
 
   private inferBasePath() {
     if (typeof window === "undefined") return "";
-    const configured = window.__CLAWDIS_CONTROL_UI_BASE_PATH__;
+    const configured = window.__CLAWDBOT_CONTROL_UI_BASE_PATH__;
     if (typeof configured === "string" && configured.trim()) {
       return normalizeBasePath(configured);
     }
@@ -765,11 +774,11 @@ export class ClawdisApp extends LitElement {
   async loadCron() {
     await Promise.all([loadCronStatus(this), loadCronJobs(this)]);
   }
-
   async handleSendChat() {
-    if (!this.connected || !this.hasConnectedMobileNode()) return;
-    await sendChat(this);
-    void loadChatHistory(this);
+    if (!this.connected) return;
+    const ok = await sendChat(this);
+    if (ok) void loadChatHistory(this);
+    this.scheduleChatScroll();
   }
 
   async handleWhatsAppStart(force: boolean) {

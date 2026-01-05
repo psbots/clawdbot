@@ -25,6 +25,7 @@ import {
 import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { emitHeartbeatEvent } from "../infra/heartbeat-events.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import { registerUnhandledRejectionHandler } from "../infra/unhandled-rejections.js";
 import { createSubsystemLogger, getChildLogger } from "../logging.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { isSelfChatMode, jidToE164, normalizeE164 } from "../utils.js";
@@ -47,6 +48,45 @@ const whatsappLog = createSubsystemLogger("gateway/providers/whatsapp");
 const whatsappInboundLog = whatsappLog.child("inbound");
 const whatsappOutboundLog = whatsappLog.child("outbound");
 const whatsappHeartbeatLog = whatsappLog.child("heartbeat");
+
+const isLikelyWhatsAppCryptoError = (reason: unknown) => {
+  const formatReason = (value: unknown): string => {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    if (value instanceof Error) {
+      return `${value.message}\n${value.stack ?? ""}`;
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return Object.prototype.toString.call(value);
+      }
+    }
+    if (typeof value === "number") return String(value);
+    if (typeof value === "boolean") return String(value);
+    if (typeof value === "bigint") return String(value);
+    if (typeof value === "symbol") return value.description ?? value.toString();
+    if (typeof value === "function")
+      return value.name ? `[function ${value.name}]` : "[function]";
+    return Object.prototype.toString.call(value);
+  };
+  const raw =
+    reason instanceof Error
+      ? `${reason.message}\n${reason.stack ?? ""}`
+      : formatReason(reason);
+  const haystack = raw.toLowerCase();
+  const hasAuthError =
+    haystack.includes("unsupported state or unable to authenticate data") ||
+    haystack.includes("bad mac");
+  if (!hasAuthError) return false;
+  return (
+    haystack.includes("@whiskeysockets/baileys") ||
+    haystack.includes("baileys") ||
+    haystack.includes("noise-handler") ||
+    haystack.includes("aesdecryptgcm")
+  );
+};
 
 // Send via the active gateway-backed listener. The monitor already owns the single
 // Baileys session, so use its send API directly.
@@ -925,6 +965,7 @@ export async function monitorWebProvider(
     let lastMessageAt: number | null = null;
     let handledMessages = 0;
     let _lastInboundMsg: WebInboundMsg | null = null;
+    let unregisterUnhandled: (() => void) | null = null;
 
     // Watchdog to detect stuck message processing (e.g., event emitter died)
     // Should be significantly longer than the reply heartbeat interval to avoid false positives
@@ -945,7 +986,7 @@ export async function monitorWebProvider(
       let messagePrefix = cfg.messages?.messagePrefix;
       if (messagePrefix === undefined) {
         const hasAllowFrom = (cfg.whatsapp?.allowFrom?.length ?? 0) > 0;
-        messagePrefix = hasAllowFrom ? "" : "[clawdis]";
+        messagePrefix = hasAllowFrom ? "" : "[clawdbot]";
       }
       const prefixStr = messagePrefix ? `${messagePrefix} ` : "";
       const senderLabel =
@@ -1402,9 +1443,27 @@ export async function monitorWebProvider(
     );
 
     setActiveWebListener(listener);
+    unregisterUnhandled = registerUnhandledRejectionHandler((reason) => {
+      if (!isLikelyWhatsAppCryptoError(reason)) return false;
+      const errorStr = formatError(reason);
+      reconnectLogger.warn(
+        { connectionId, error: errorStr },
+        "web reconnect: unhandled rejection from WhatsApp socket; forcing reconnect",
+      );
+      listener.signalClose?.({
+        status: 499,
+        isLoggedOut: false,
+        error: reason,
+      });
+      return true;
+    });
 
     const closeListener = async () => {
       setActiveWebListener(null);
+      if (unregisterUnhandled) {
+        unregisterUnhandled();
+        unregisterUnhandled = null;
+      }
       if (heartbeat) clearInterval(heartbeat);
       if (watchdogTimer) clearInterval(watchdogTimer);
       if (backgroundTasks.size > 0) {
@@ -1554,7 +1613,7 @@ export async function monitorWebProvider(
 
     if (loggedOut) {
       runtime.error(
-        "WhatsApp session logged out. Run `clawdis login --provider web` to relink.",
+        "WhatsApp session logged out. Run `clawdbot login --provider web` to relink.",
       );
       await closeListener();
       break;

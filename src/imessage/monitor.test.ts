@@ -14,9 +14,13 @@ let notificationHandler:
   | undefined;
 let closeResolve: (() => void) | undefined;
 
-vi.mock("../config/config.js", () => ({
-  loadConfig: () => config,
-}));
+vi.mock("../config/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../config/config.js")>();
+  return {
+    ...actual,
+    loadConfig: () => config,
+  };
+});
 
 vi.mock("../auto-reply/reply.js", () => ({
   getReplyFromConfig: (...args: unknown[]) => replyMock(...args),
@@ -27,7 +31,7 @@ vi.mock("./send.js", () => ({
 }));
 
 vi.mock("../config/sessions.js", () => ({
-  resolveStorePath: vi.fn(() => "/tmp/clawdis-sessions.json"),
+  resolveStorePath: vi.fn(() => "/tmp/clawdbot-sessions.json"),
   updateLastRoute: (...args: unknown[]) => updateLastRouteMock(...args),
 }));
 

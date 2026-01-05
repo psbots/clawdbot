@@ -1,6 +1,8 @@
 import { html, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { SessionsListResult } from "../types";
+import { toSanitizedMarkdownHtml } from "../markdown";
 import { resolveToolDisplay, formatToolDetail } from "../tool-display";
 
 export type ChatProps = {
@@ -15,6 +17,7 @@ export type ChatProps = {
   connected: boolean;
   canSend: boolean;
   disabledReason: string | null;
+  error: string | null;
   sessions: SessionsListResult | null;
   onRefresh: () => void;
   onDraftChange: (next: string) => void;
@@ -23,13 +26,11 @@ export type ChatProps = {
 
 export function renderChat(props: ChatProps) {
   const canInteract = props.connected;
-  const canCompose = props.canSend && !props.sending;
+  const canCompose = props.connected && !props.sending;
   const sessionOptions = resolveSessionOptions(props.sessionKey, props.sessions);
-  const composePlaceholder = (() => {
-    if (!props.connected) return "Connect to the gateway to start chatting…";
-    if (!props.canSend) return "Connect an iOS/Android node to enable Web Chat + Talk…";
-    return "Message (⌘↩ to send)";
-  })();
+  const composePlaceholder = props.connected
+    ? "Message (⌘↩ to send)"
+    : "Connect to the gateway to start chatting…";
 
   return html`
     <section class="card chat">
@@ -70,6 +71,10 @@ export function renderChat(props: ChatProps) {
           </div>`
         : nothing}
 
+      ${props.error
+        ? html`<div class="callout danger" style="margin-top: 12px;">${props.error}</div>`
+        : nothing}
+
       <div class="chat-thread" role="log" aria-live="polite">
         ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
         ${props.messages.map((m) => renderMessage(m))}
@@ -90,7 +95,7 @@ export function renderChat(props: ChatProps) {
           <span>Message</span>
           <textarea
             .value=${props.draft}
-            ?disabled=${!props.canSend}
+            ?disabled=${!props.connected}
             @keydown=${(e: KeyboardEvent) => {
               if (e.key !== "Enter") return;
               if (!e.metaKey && !e.ctrlKey) return;
@@ -105,7 +110,7 @@ export function renderChat(props: ChatProps) {
         <div class="row chat-compose__actions">
           <button
             class="btn primary"
-            ?disabled=${!props.canSend || props.sending}
+            ?disabled=${!props.connected || props.sending}
             @click=${props.onSend}
           >
             ${props.sending ? "Sending…" : "Send"}
@@ -175,13 +180,19 @@ function renderMessage(message: unknown, opts?: { streaming?: boolean }) {
   const extractedText = extractText(message);
   const contentText = typeof m.content === "string" ? m.content : null;
   const fallback = hasToolCards ? null : JSON.stringify(message, null, 2);
-  const text = !isToolResult
-    ? extractedText?.trim()
-      ? extractedText
-      : contentText?.trim()
-        ? contentText
-        : fallback
-    : null;
+
+  const display =
+    !isToolResult && extractedText?.trim()
+      ? { kind: "text" as const, value: extractedText }
+      : !isToolResult && contentText?.trim()
+        ? { kind: "text" as const, value: contentText }
+        : !isToolResult && fallback
+          ? { kind: "json" as const, value: fallback }
+          : null;
+  const markdown =
+    display?.kind === "json"
+      ? ["```json", display.value, "```"].join("\n")
+      : display?.value ?? null;
 
   const timestamp =
     typeof m.timestamp === "number" ? new Date(m.timestamp).toLocaleTimeString() : "";
@@ -191,7 +202,9 @@ function renderMessage(message: unknown, opts?: { streaming?: boolean }) {
     <div class="chat-line ${klass}">
       <div class="chat-msg">
         <div class="chat-bubble ${opts?.streaming ? "streaming" : ""}">
-          ${text ? html`<div class="chat-text">${text}</div>` : nothing}
+          ${markdown
+            ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
+            : nothing}
           ${toolCards.map((card) => renderToolCard(card))}
         </div>
         <div class="chat-stamp mono">
@@ -276,7 +289,9 @@ function renderToolCard(card: ToolCard) {
         ? html`<div class="chat-tool-card__detail">${detail}</div>`
         : nothing}
       ${card.text
-        ? html`<div class="chat-tool-card__output">${card.text}</div>`
+        ? html`<div class="chat-tool-card__output chat-text">
+            ${unsafeHTML(toSanitizedMarkdownHtml(card.text))}
+          </div>`
         : nothing}
     </div>
   `;

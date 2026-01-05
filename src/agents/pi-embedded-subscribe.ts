@@ -248,7 +248,9 @@ export function subscribeEmbeddedPiSession(params: {
   };
 
   const emitBlockChunk = (text: string) => {
-    const chunk = text.trimEnd();
+    // Strip any <thinking> tags that may have leaked into the output (e.g., from Gemini mimicking history)
+    const strippedText = stripThinkingSegments(stripUnpairedThinkingTags(text));
+    const chunk = strippedText.trimEnd();
     if (!chunk) return;
     if (chunk === lastBlockReplyText) return;
     lastBlockReplyText = chunk;
@@ -315,6 +317,20 @@ export function subscribeEmbeddedPiSession(params: {
 
   const unsubscribe = params.session.subscribe(
     (evt: AgentEvent | { type: string; [k: string]: unknown }) => {
+      if (evt.type === "message_start") {
+        const msg = (evt as AgentEvent & { message: AgentMessage }).message;
+        if (msg?.role === "assistant") {
+          // Start-of-message is a safer reset point than message_end: some providers
+          // may deliver late text_end updates after message_end, which would
+          // otherwise re-trigger block replies.
+          deltaBuffer = "";
+          blockBuffer = "";
+          lastStreamedAssistant = undefined;
+          lastBlockReplyText = undefined;
+          assistantTextBaseline = assistantTexts.length;
+        }
+      }
+
       if (evt.type === "tool_execution_start") {
         const toolName = String(
           (evt as AgentEvent & { toolName: string }).toolName,
@@ -555,7 +571,10 @@ export function subscribeEmbeddedPiSession(params: {
 
           const addedDuringMessage =
             assistantTexts.length > assistantTextBaseline;
-          if (!addedDuringMessage && text) assistantTexts.push(text);
+          if (!addedDuringMessage && text) {
+            const last = assistantTexts.at(-1);
+            if (!last || last !== text) assistantTexts.push(text);
+          }
           assistantTextBaseline = assistantTexts.length;
 
           if (
@@ -580,7 +599,6 @@ export function subscribeEmbeddedPiSession(params: {
           deltaBuffer = "";
           blockBuffer = "";
           lastStreamedAssistant = undefined;
-          lastBlockReplyText = undefined;
         }
       }
 
@@ -598,6 +616,18 @@ export function subscribeEmbeddedPiSession(params: {
 
       if (evt.type === "agent_start") {
         log.debug(`embedded run agent start: runId=${params.runId}`);
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "lifecycle",
+          data: {
+            phase: "start",
+            startedAt: Date.now(),
+          },
+        });
+        params.onAgentEvent?.({
+          stream: "lifecycle",
+          data: { phase: "start" },
+        });
       }
 
       if (evt.type === "auto_compaction_start") {
@@ -620,6 +650,18 @@ export function subscribeEmbeddedPiSession(params: {
 
       if (evt.type === "agent_end") {
         log.debug(`embedded run agent end: runId=${params.runId}`);
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "lifecycle",
+          data: {
+            phase: "end",
+            endedAt: Date.now(),
+          },
+        });
+        params.onAgentEvent?.({
+          stream: "lifecycle",
+          data: { phase: "end" },
+        });
         if (pendingCompactionRetry > 0) {
           resolveCompactionRetry();
         } else {

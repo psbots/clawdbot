@@ -127,28 +127,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     context.bridgeSendToSession(sessionKey, "chat", payload);
     respond(true, { ok: true, aborted: true });
   },
-  "chat.send": async ({
-    params,
-    respond,
-    context,
-    client,
-    isWebchatConnect,
-  }) => {
-    if (
-      client &&
-      isWebchatConnect(client.connect) &&
-      !context.hasConnectedMobileNode()
-    ) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.UNAVAILABLE,
-          "web chat disabled: no connected iOS/Android nodes",
-        ),
-      );
-      return;
-    }
+  "chat.send": async ({ params, respond, context }) => {
     if (!validateChatSendParams(params)) {
       respond(
         false,
