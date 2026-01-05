@@ -364,22 +364,32 @@ export function deriveSessionKey(scope: SessionScope, ctx: MsgContext) {
 /**
  * Resolve the session key with a canonical direct-chat bucket (default: "main").
  * All non-group direct chats collapse to this bucket; groups stay isolated.
+ * If isolateDirectChats is true, each sender gets their own session.
  */
 export function resolveSessionKey(
   scope: SessionScope,
   ctx: MsgContext,
   mainKey?: string,
+  isolateDirectChats?: boolean,
 ) {
   const explicit = ctx.SessionKey?.trim();
   if (explicit) return explicit;
   const raw = deriveSessionKey(scope, ctx);
   if (scope === "global") return raw;
-  // Default to a single shared direct-chat session called "main"; groups stay isolated.
-  const canonical = (mainKey ?? "main").trim() || "main";
+  
   const isGroup =
     raw.startsWith("group:") ||
     raw.includes(":group:") ||
     raw.includes(":channel:");
+  
+  // If isolateDirectChats is enabled, each sender gets their own session
+  if (isolateDirectChats && !isGroup) {
+    // Use the raw key which includes the sender identifier
+    return raw;
+  }
+  
+  // Default to a single shared direct-chat session called "main"; groups stay isolated.
+  const canonical = (mainKey ?? "main").trim() || "main";
   if (!isGroup) return canonical;
   return raw;
 }

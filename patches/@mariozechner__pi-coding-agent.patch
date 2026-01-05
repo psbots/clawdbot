@@ -1,5 +1,5 @@
 diff --git a/dist/config.js b/dist/config.js
-index 7caa66d2676933b102431ec8d92c571eb9d6d82c..77103b9d9573e56c26014c8c7c918e1f853afcdc 100644
+index 78f4b0995fb29e6a527b8f3b1659e24f4b2c71cb..ee1d6aff95b45f8af1bd524decb26f5b0ffc2bd3 100644
 --- a/dist/config.js
 +++ b/dist/config.js
 @@ -10,8 +10,11 @@ const __dirname = dirname(__filename);
@@ -16,10 +16,10 @@ index 7caa66d2676933b102431ec8d92c571eb9d6d82c..77103b9d9573e56c26014c8c7c918e1f
  // Package Asset Paths (shipped with executable)
  // =============================================================================
 diff --git a/dist/core/sdk.d.ts b/dist/core/sdk.d.ts
-index 1111111111111111..2222222222222222 100644
+index 8654daf0e59cc56219a48a25fefa37eeb400676d..a17d5ed426b6f228a89d8248d2f913be569e87dc 100644
 --- a/dist/core/sdk.d.ts
 +++ b/dist/core/sdk.d.ts
-@@ -89,6 +89,8 @@ export interface CreateAgentSessionOptions {
+@@ -90,6 +90,8 @@ export interface CreateAgentSessionOptions {
      sessionManager?: SessionManager;
      /** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
      settingsManager?: SettingsManager;
@@ -29,7 +29,7 @@ index 1111111111111111..2222222222222222 100644
  /** Result from createAgentSession */
  export interface CreateAgentSessionResult {
 diff --git a/dist/core/sdk.js b/dist/core/sdk.js
-index 3333333333333333..4444444444444444 100644
+index 46594910c8d1a2ff6bfd0b7dd253c3e46fb08062..e9a17e83fda72b8d0cfa0a77a616b1311d7849f3 100644
 --- a/dist/core/sdk.js
 +++ b/dist/core/sdk.js
 @@ -448,6 +448,7 @@ export async function createAgentSession(options = {}) {

@@ -84,6 +84,7 @@ function resolveSession(opts: {
   const sessionCfg = opts.cfg.session;
   const scope = sessionCfg?.scope ?? "per-sender";
   const mainKey = sessionCfg?.mainKey ?? "main";
+  const isolateDirectChats = sessionCfg?.isolateDirectChats;
   const idleMinutes = Math.max(
     sessionCfg?.idleMinutes ?? DEFAULT_IDLE_MINUTES,
     1,
@@ -97,7 +98,7 @@ function resolveSession(opts: {
     ? { From: opts.to }
     : undefined;
   let sessionKey: string | undefined = ctx
-    ? resolveSessionKey(scope, ctx, mainKey)
+    ? resolveSessionKey(scope, ctx, mainKey, isolateDirectChats)
     : undefined;
   let sessionEntry = sessionKey ? sessionStore[sessionKey] : undefined;
 

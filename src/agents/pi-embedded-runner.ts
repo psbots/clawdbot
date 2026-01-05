@@ -48,6 +48,7 @@ import {
   subscribeEmbeddedPiSession,
 } from "./pi-embedded-subscribe.js";
 import { extractAssistantText } from "./pi-embedded-utils.js";
+import { streamWithBedrock } from "../providers/stream-with-bedrock.js";
 import { createClawdisCodingTools } from "./pi-tools.js";
 import { resolveSandboxContext } from "./sandbox.js";
 import {
@@ -551,6 +552,8 @@ export async function runEmbeddedPiAgent(params: {
           settingsManager,
           skills: promptSkills,
           contextFiles,
+          // Use custom stream function for Bedrock support
+          streamFn: streamWithBedrock,
         });
 
         const prior = await sanitizeSessionMessagesImages(

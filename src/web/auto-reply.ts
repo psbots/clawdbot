@@ -240,7 +240,8 @@ export async function runWebHeartbeatOnce(opts: {
   const sessionCfg = cfg.session;
   const sessionScope = sessionCfg?.scope ?? "per-sender";
   const mainKey = sessionCfg?.mainKey;
-  const sessionKey = resolveSessionKey(sessionScope, { From: to }, mainKey);
+  const isolateDirectChats = sessionCfg?.isolateDirectChats;
+  const sessionKey = resolveSessionKey(sessionScope, { From: to }, mainKey, isolateDirectChats);
   if (sessionId) {
     const storePath = resolveStorePath(cfg.session?.store);
     const store = loadSessionStore(storePath);
@@ -483,6 +484,7 @@ function getSessionSnapshot(
     scope,
     { From: from, To: "", Body: "" },
     sessionCfg?.mainKey,
+    sessionCfg?.isolateDirectChats,
   );
   const store = loadSessionStore(resolveStorePath(sessionCfg?.store));
   const entry = store[key];

@@ -41,6 +41,7 @@ export async function initSessionState(params: {
   const { ctx, cfg } = params;
   const sessionCfg = cfg.session;
   const mainKey = sessionCfg?.mainKey ?? "main";
+  const isolateDirectChats = sessionCfg?.isolateDirectChats;
   const resetTriggers = sessionCfg?.resetTriggers?.length
     ? sessionCfg.resetTriggers
     : DEFAULT_RESET_TRIGGERS;
@@ -100,7 +101,7 @@ export async function initSessionState(params: {
     }
   }
 
-  sessionKey = resolveSessionKey(sessionScope, ctx, mainKey);
+  sessionKey = resolveSessionKey(sessionScope, ctx, mainKey, isolateDirectChats);
   if (groupResolution?.legacyKey && groupResolution.legacyKey !== sessionKey) {
     const legacyEntry = sessionStore[groupResolution.legacyKey];
     if (legacyEntry && !sessionStore[sessionKey]) {

@@ -136,17 +136,62 @@ function mergePropertySchemas(existing: unknown, incoming: unknown): unknown {
     for (const source of [existing, incoming]) {
       if (!source || typeof source !== "object") continue;
       const record = source as Record<string, unknown>;
-      for (const key of ["title", "description", "default"]) {
+      for (const key of ["title", "description", "default", "type"]) {
         if (!(key in merged) && key in record) merged[key] = record[key];
       }
     }
-    const types = new Set(values.map((value) => typeof value));
+    const types = new Set(
+      values.map((value) => (value === null ? "null" : typeof value)),
+    );
     if (types.size === 1) merged.type = Array.from(types)[0];
     merged.enum = values;
     return merged;
   }
 
+  if (
+    typeof existing === "object" &&
+    typeof incoming === "object" &&
+    !Array.isArray(existing) &&
+    !Array.isArray(incoming)
+  ) {
+    const e = existing as Record<string, unknown>;
+    const i = incoming as Record<string, unknown>;
+
+    // Merge properties
+    const mergedProperties: Record<string, unknown> = {
+      ...(e.properties as Record<string, unknown>),
+    };
+    const iProps = (i.properties as Record<string, unknown>) ?? {};
+    for (const [key, value] of Object.entries(iProps)) {
+      mergedProperties[key] = mergePropertySchemas(mergedProperties[key], value);
+    }
+
+    // Merge required (only those present in BOTH if we want to be safe, but for Gemini flattening
+    // we often want all possible properties to be optional unless strictly required in all).
+    const eReq = Array.isArray(e.required) ? e.required : [];
+    const iReq = Array.isArray(i.required) ? i.required : [];
+    const mergedRequired = eReq.filter((r) => iReq.includes(r));
+
+    return {
+      ...e,
+      ...i,
+      type: (e.type as string) ?? (i.type as string) ?? "object",
+      properties:
+        Object.keys(mergedProperties).length > 0 ? mergedProperties : undefined,
+      required: mergedRequired.length > 0 ? mergedRequired : undefined,
+    };
+  }
+
   return existing;
+}
+
+function mergeSchemas(schemas: unknown[]): Record<string, unknown> {
+  if (schemas.length === 0) return {};
+  let merged = schemas[0];
+  for (let i = 1; i < schemas.length; i++) {
+    merged = mergePropertySchemas(merged, schemas[i]);
+  }
+  return (merged as Record<string, unknown>) ?? {};
 }
 
 function cleanSchemaForGemini(schema: unknown): unknown {
@@ -154,7 +199,23 @@ function cleanSchemaForGemini(schema: unknown): unknown {
   if (Array.isArray(schema)) return schema.map(cleanSchemaForGemini);
 
   const obj = schema as Record<string, unknown>;
-  const hasAnyOf = "anyOf" in obj && Array.isArray(obj.anyOf);
+
+  // If this level has any unions, flatten them first
+  if (
+    Array.isArray(obj.anyOf) ||
+    Array.isArray(obj.oneOf) ||
+    Array.isArray(obj.allOf)
+  ) {
+    const variants = [
+      ...(Array.isArray(obj.anyOf) ? obj.anyOf : []),
+      ...(Array.isArray(obj.oneOf) ? obj.oneOf : []),
+      ...(Array.isArray(obj.allOf) ? obj.allOf : []),
+    ];
+    if (variants.length > 0) {
+      return cleanSchemaForGemini(mergeSchemas(variants));
+    }
+  }
+
   const cleaned: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
@@ -172,10 +233,8 @@ function cleanSchemaForGemini(schema: unknown): unknown {
       continue;
     }
 
-    // Skip 'type' if we have 'anyOf' — Gemini doesn't allow both
-    if (key === "type" && hasAnyOf) {
-      continue;
-    }
+    // Gemini always requires 'type' at the top level and in properties.
+    // If we have anyOf/oneOf/allOf, we should still keep the type if it was provided or merged.
 
     if (key === "properties" && value && typeof value === "object") {
       // Recursively clean nested properties
@@ -186,15 +245,6 @@ function cleanSchemaForGemini(schema: unknown): unknown {
     } else if (key === "items" && value && typeof value === "object") {
       // Recursively clean array items schema
       cleaned[key] = cleanSchemaForGemini(value);
-    } else if (key === "anyOf" && Array.isArray(value)) {
-      // Clean each anyOf variant
-      cleaned[key] = value.map((variant) => cleanSchemaForGemini(variant));
-    } else if (key === "oneOf" && Array.isArray(value)) {
-      // Clean each oneOf variant
-      cleaned[key] = value.map((variant) => cleanSchemaForGemini(variant));
-    } else if (key === "allOf" && Array.isArray(value)) {
-      // Clean each allOf variant
-      cleaned[key] = value.map((variant) => cleanSchemaForGemini(variant));
     } else if (
       key === "additionalProperties" &&
       value &&
@@ -217,78 +267,9 @@ function normalizeToolParameters(tool: AnyAgentTool): AnyAgentTool {
       : undefined;
   if (!schema) return tool;
 
-  // If schema already has type + properties (no top-level anyOf to merge),
-  // still clean it for Gemini compatibility
-  if (
-    "type" in schema &&
-    "properties" in schema &&
-    !Array.isArray(schema.anyOf)
-  ) {
-    return {
-      ...tool,
-      parameters: cleanSchemaForGemini(schema),
-    };
-  }
-
-  if (!Array.isArray(schema.anyOf)) return tool;
-  const mergedProperties: Record<string, unknown> = {};
-  const requiredCounts = new Map<string, number>();
-  let objectVariants = 0;
-
-  for (const entry of schema.anyOf) {
-    if (!entry || typeof entry !== "object") continue;
-    const props = (entry as { properties?: unknown }).properties;
-    if (!props || typeof props !== "object") continue;
-    objectVariants += 1;
-    for (const [key, value] of Object.entries(
-      props as Record<string, unknown>,
-    )) {
-      if (!(key in mergedProperties)) {
-        mergedProperties[key] = value;
-        continue;
-      }
-      mergedProperties[key] = mergePropertySchemas(
-        mergedProperties[key],
-        value,
-      );
-    }
-    const required = Array.isArray((entry as { required?: unknown }).required)
-      ? (entry as { required: unknown[] }).required
-      : [];
-    for (const key of required) {
-      if (typeof key !== "string") continue;
-      requiredCounts.set(key, (requiredCounts.get(key) ?? 0) + 1);
-    }
-  }
-
-  const baseRequired = Array.isArray(schema.required)
-    ? schema.required.filter((key) => typeof key === "string")
-    : undefined;
-  const mergedRequired =
-    baseRequired && baseRequired.length > 0
-      ? baseRequired
-      : objectVariants > 0
-        ? Array.from(requiredCounts.entries())
-            .filter(([, count]) => count === objectVariants)
-            .map(([key]) => key)
-        : undefined;
-
-  const nextSchema: Record<string, unknown> = { ...schema };
   return {
     ...tool,
-    parameters: cleanSchemaForGemini({
-      ...nextSchema,
-      type: nextSchema.type ?? "object",
-      properties:
-        Object.keys(mergedProperties).length > 0
-          ? mergedProperties
-          : (schema.properties ?? {}),
-      ...(mergedRequired && mergedRequired.length > 0
-        ? { required: mergedRequired }
-        : {}),
-      additionalProperties:
-        "additionalProperties" in schema ? schema.additionalProperties : true,
-    }),
+    parameters: cleanSchemaForGemini(schema),
   };
 }
 
@@ -472,11 +453,11 @@ export function createClawdisCodingTools(options?: {
     ...options?.bash,
     sandbox: sandbox
       ? {
-          containerName: sandbox.containerName,
-          workspaceDir: sandbox.workspaceDir,
-          containerWorkdir: sandbox.containerWorkdir,
-          env: sandbox.docker.env,
-        }
+        containerName: sandbox.containerName,
+        workspaceDir: sandbox.workspaceDir,
+        containerWorkdir: sandbox.containerWorkdir,
+        env: sandbox.docker.env,
+      }
       : undefined,
   });
   const processTool = createProcessTool({
@@ -486,9 +467,9 @@ export function createClawdisCodingTools(options?: {
     ...base,
     ...(sandboxRoot
       ? [
-          createSandboxedEditTool(sandboxRoot),
-          createSandboxedWriteTool(sandboxRoot),
-        ]
+        createSandboxedEditTool(sandboxRoot),
+        createSandboxedWriteTool(sandboxRoot),
+      ]
       : []),
     bashTool as unknown as AnyAgentTool,
     processTool as unknown as AnyAgentTool,

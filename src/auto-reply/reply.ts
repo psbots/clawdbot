@@ -194,10 +194,10 @@ export async function getReplyFromConfig(
     const heartbeatRaw = agentCfg?.heartbeat?.model?.trim() ?? "";
     const heartbeatRef = heartbeatRaw
       ? resolveModelRefFromString({
-          raw: heartbeatRaw,
-          defaultProvider,
-          aliasIndex,
-        })
+        raw: heartbeatRaw,
+        defaultProvider,
+        aliasIndex,
+      })
       : null;
     if (heartbeatRef) {
       provider = heartbeatRef.ref.provider;
@@ -270,12 +270,12 @@ export async function getReplyFromConfig(
     elevatedEnabled &&
     Boolean(
       surfaceKey &&
-        isApprovedElevatedSender({
-          surface: surfaceKey,
-          ctx,
-          allowFrom: elevatedConfig?.allowFrom,
-          discordFallback: discordElevatedFallback,
-        }),
+      isApprovedElevatedSender({
+        surface: surfaceKey,
+        ctx,
+        allowFrom: elevatedConfig?.allowFrom,
+        discordFallback: discordElevatedFallback,
+      }),
     );
   if (
     directives.hasElevatedDirective &&
@@ -305,7 +305,7 @@ export async function getReplyFromConfig(
       (sessionEntry?.elevatedLevel as ElevatedLevel | undefined) ??
       (agentCfg?.elevatedDefault as ElevatedLevel | undefined) ??
       "on")
-    : "on";
+    : "off";
   const resolvedBlockStreaming =
     agentCfg?.blockStreamingDefault === "off" ? "off" : "on";
   const resolvedBlockStreamingBreak: "text_end" | "message_end" =
@@ -412,10 +412,10 @@ export async function getReplyFromConfig(
   const perMessageQueueOptions =
     directives.hasQueueDirective && !directives.queueReset
       ? {
-          debounceMs: directives.debounceMs,
-          cap: directives.cap,
-          dropPolicy: directives.dropPolicy,
-        }
+        debounceMs: directives.debounceMs,
+        cap: directives.cap,
+        dropPolicy: directives.dropPolicy,
+      }
       : undefined;
 
   const command = buildCommandContext({
@@ -470,15 +470,15 @@ export async function getReplyFromConfig(
   const shouldEagerType = !isGroupChat || wasMentioned;
   const shouldInjectGroupIntro = Boolean(
     isGroupChat &&
-      (isFirstTurnInSession || sessionEntry?.groupActivationNeedsSystemIntro),
+    (isFirstTurnInSession || sessionEntry?.groupActivationNeedsSystemIntro),
   );
   const groupIntro = shouldInjectGroupIntro
     ? buildGroupIntro({
-        sessionCtx,
-        sessionEntry,
-        defaultActivation,
-        silentToken: SILENT_REPLY_TOKEN,
-      })
+      sessionCtx,
+      sessionEntry,
+      defaultActivation,
+      silentToken: SILENT_REPLY_TOKEN,
+    })
     : "";
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
   const rawBodyTrimmed = (ctx.Body ?? "").trim();
@@ -534,8 +534,8 @@ export async function getReplyFromConfig(
   const skillsSnapshot = skillResult.skillsSnapshot;
   const prefixedBody = transcribedText
     ? [prefixedBodyBase, `Transcript:\n${transcribedText}`]
-        .filter(Boolean)
-        .join("\n\n")
+      .filter(Boolean)
+      .join("\n\n")
     : prefixedBodyBase;
   const mediaNote = ctx.MediaPath?.length
     ? `[media attached: ${ctx.MediaPath}${ctx.MediaType ? ` (${ctx.MediaType})` : ""}${ctx.MediaUrl ? ` | ${ctx.MediaUrl}` : ""}]`
@@ -545,9 +545,9 @@ export async function getReplyFromConfig(
     : undefined;
   let commandBody = mediaNote
     ? [mediaNote, mediaReplyHint, prefixedBody ?? ""]
-        .filter(Boolean)
-        .join("\n")
-        .trim()
+      .filter(Boolean)
+      .join("\n")
+      .trim()
     : prefixedBody;
   if (!resolvedThinkLevel && commandBody) {
     const parts = commandBody.split(/\s+/);
@@ -564,14 +564,14 @@ export async function getReplyFromConfig(
   const sessionFile = resolveSessionTranscriptPath(sessionIdFinal);
   const queueBodyBase = transcribedText
     ? [baseBodyFinal, `Transcript:\n${transcribedText}`]
-        .filter(Boolean)
-        .join("\n\n")
+      .filter(Boolean)
+      .join("\n\n")
     : baseBodyFinal;
   const queuedBody = mediaNote
     ? [mediaNote, mediaReplyHint, queueBodyBase]
-        .filter(Boolean)
-        .join("\n")
-        .trim()
+      .filter(Boolean)
+      .join("\n")
+      .trim()
     : queueBodyBase;
   const resolvedQueue = resolveQueueSettings({
     cfg,

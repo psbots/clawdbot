@@ -25,6 +25,8 @@ export type SessionConfig = {
   store?: string;
   typingIntervalSeconds?: number;
   mainKey?: string;
+  /** If true, each direct chat sender gets their own session instead of collapsing to "main". */
+  isolateDirectChats?: boolean;
   sendPolicy?: SessionSendPolicyConfig;
   agentToAgent?: {
     /** Max ping-pong turns between requester/target (0–5). Default: 5. */

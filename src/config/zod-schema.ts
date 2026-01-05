@@ -113,6 +113,7 @@ const SessionSchema = z
     store: z.string().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),
     mainKey: z.string().optional(),
+    isolateDirectChats: z.boolean().optional(),
     sendPolicy: z
       .object({
         default: z.union([z.literal("allow"), z.literal("deny")]).optional(),
